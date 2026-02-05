@@ -1,5 +1,9 @@
-import face_recognition
+from app.services.face_model import face_app
 
 def get_embedding(frame):
-    enc = face_recognition.face_encodings(frame)
-    return enc[0] if enc else None
+    faces = face_app.get(frame)
+
+    if not faces:
+        return None
+
+    return faces[0].embedding
