@@ -3,10 +3,14 @@
 from fastapi import APIRouter, UploadFile, File
 import numpy as np
 import cv2
+from app.services.embedding import get_embedding
+from app.services.similarity import search_face
+
 
 from app.services.vision_pipeline import run_vision_pipeline
 from app.services.similarity import check_duplicate
 from app.decision.decision_engine import decide
+from app.db.vector_store import store_face
 from app.utils.logger import log
 
 router = APIRouter(prefix="/kyc", tags=["KYC"])
@@ -14,11 +18,10 @@ router = APIRouter(prefix="/kyc", tags=["KYC"])
 
 def read_image(upload: UploadFile):
     """
-    Convert uploaded file to OpenCV image
+    Convert uploaded image → OpenCV frame
     """
     file_bytes = np.frombuffer(upload.file.read(), np.uint8)
-    image = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-    return image
+    return cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
 
 @router.post("/verify")
@@ -29,7 +32,6 @@ async def verify(
     try:
         log("Receiving images")
 
-        # Convert uploads → OpenCV frames
         frame1 = read_image(image1)
         frame2 = read_image(image2)
 
@@ -43,7 +45,7 @@ async def verify(
 
         pipeline_result = run_vision_pipeline(frame1, frame2)
 
-        # If pipeline fails → reject immediately
+        # Pipeline failure → reject immediately
         if not pipeline_result["success"]:
             log(f"Pipeline failed: {pipeline_result['error']}")
             return {
@@ -57,12 +59,17 @@ async def verify(
 
         duplicate = check_duplicate(embedding)
 
-        log("Making final decision")
+        log("Making decision")
 
         decision = decide(
             pipeline_result["liveness"],
             duplicate
         )
+
+        # 🔥 Store face only if approved
+        if decision["status"] == "approved":
+            filename = store_face(frame2, embedding)
+            log(f"Stored new identity image: {filename}")
 
         return decision
 
@@ -72,5 +79,47 @@ async def verify(
         return {
             "status": "error",
             "reason": "internal processing failure"
+        }
+
+@router.post("/search")
+async def search(image: UploadFile = File(...)):
+    try:
+        log("Searching identity")
+
+        frame = read_image(image)
+
+        if frame is None:
+            return {
+                "status": "error",
+                "reason": "invalid image"
+            }
+
+        embedding = get_embedding(frame)
+
+        if embedding is None:
+            return {
+                "status": "rejected",
+                "reason": "face encoding failed"
+            }
+
+        match, score = search_face(embedding)
+
+        if match:
+            return {
+                "status": "match_found",
+                "similarity_score": float(score)
+            }
+
+        return {
+            "status": "no_match",
+            "closest_score": float(score)
+        }
+
+    except Exception as e:
+        log(f"Search error: {str(e)}")
+
+        return {
+            "status": "error",
+            "reason": "internal failure"
         }
 

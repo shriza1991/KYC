@@ -1,8 +1,10 @@
 import numpy as np
 import os
+import cv2
+import uuid
 
-# Save inside backend folder
 DB_PATH = "stored_embeddings.npy"
+IMAGE_DIR = "stored_images"
 
 
 def load_db():
@@ -12,6 +14,27 @@ def load_db():
 
 
 def save_db(db):
-    # ensure directory exists (safe even if already exists)
-    os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
     np.save(DB_PATH, db)
+
+
+def store_face(frame, embedding):
+    """
+    Save image + embedding
+    """
+
+    os.makedirs(IMAGE_DIR, exist_ok=True)
+
+    # generate unique filename
+    filename = f"{uuid.uuid4().hex}.jpg"
+    path = os.path.join(IMAGE_DIR, filename)
+
+    # save face image
+    cv2.imwrite(path, frame)
+
+    # save embedding
+    db = load_db()
+    db.append(embedding)
+    save_db(db)
+
+    return filename
+
