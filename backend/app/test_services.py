@@ -50,4 +50,4 @@ def test_pipeline(img1_path, img2_path):
 
 if __name__ == "__main__":
     # CHANGE THESE PATHS
-    test_pipeline("noface.jpeg", "noface.jpeg")
+    test_pipeline("test1.jpeg", "test2.jpeg")
