@@ -7,9 +7,17 @@ from app.services.embedding import get_embedding
 from app.services.similarity import search_face, check_duplicate
 from app.services.video_processing import extract_frames
 from app.services.vision_pipeline import run_vision_pipeline
+from app.services.deepfake_check import deepfake_risk
+
 from app.decision.decision_engine import decide
 from app.db.vector_store import store_face
 from app.utils.logger import log
+from app.db.vector_store import (
+    get_identity_count,
+    list_identities,
+    reset_registry
+)
+
 
 router = APIRouter(prefix="/kyc", tags=["KYC"])
 
@@ -154,6 +162,14 @@ async def verify_video(video: UploadFile = File(...)):
                 "status": "rejected",
                 "reason": "liveness failed"
             }
+            risk = deepfake_risk(frames)
+
+        if risk > 0.6:
+            return {
+        "status": "rejected",
+        "reason": "deepfake suspicion"
+            }
+
 
         embedding = pipeline_result["embedding"]
 
@@ -172,3 +188,19 @@ async def verify_video(video: UploadFile = File(...)):
             "status": "error",
             "reason": "video processing failed"
         }
+@router.get("/count")
+async def identity_count():
+    return {
+        "identity_count": get_identity_count()
+    }
+@router.get("/identities")
+async def identities():
+    return {
+        "stored_identities": list_identities()
+    }
+
+@router.delete("/reset")
+async def reset():
+    reset_registry()
+    return {"status": "registry cleared"}
+
