@@ -4,11 +4,9 @@ from fastapi import APIRouter, UploadFile, File
 import numpy as np
 import cv2
 from app.services.embedding import get_embedding
-from app.services.similarity import search_face
-
-
+from app.services.similarity import search_face, check_duplicate
+from app.services.video_processing import extract_frames
 from app.services.vision_pipeline import run_vision_pipeline
-from app.services.similarity import check_duplicate
 from app.decision.decision_engine import decide
 from app.db.vector_store import store_face
 from app.utils.logger import log
@@ -81,6 +79,7 @@ async def verify(
             "reason": "internal processing failure"
         }
 
+
 @router.post("/search")
 async def search(image: UploadFile = File(...)):
     try:
@@ -123,3 +122,53 @@ async def search(image: UploadFile = File(...)):
             "reason": "internal failure"
         }
 
+
+@router.post("/verify-video")
+async def verify_video(video: UploadFile = File(...)):
+    try:
+        log("Processing video upload")
+
+        frames = extract_frames(video)
+
+        if len(frames) < 2:
+            return {
+                "status": "rejected",
+                "reason": "not enough frames"
+            }
+
+        # --- smarter liveness frame search ---
+        pipeline_result = None
+        selected_frame = None
+
+        for i in range(len(frames) - 1):
+            test = run_vision_pipeline(frames[i], frames[i + 1])
+
+            if test["success"]:
+                pipeline_result = test
+                selected_frame = frames[i + 1]
+                break
+
+        # no valid motion pair found
+        if pipeline_result is None:
+            return {
+                "status": "rejected",
+                "reason": "liveness failed"
+            }
+
+        embedding = pipeline_result["embedding"]
+
+        duplicate = check_duplicate(embedding)
+        decision = decide(pipeline_result["liveness"], duplicate)
+
+        if decision["status"] == "approved":
+            store_face(selected_frame, embedding)
+
+        return decision
+
+    except Exception as e:
+        log(f"Video error: {str(e)}")
+
+        return {
+            "status": "error",
+            "reason": "video processing failed"
+        }
