@@ -23,7 +23,7 @@ def run_vision_pipeline(frame1, frame2):
     if not check_image_quality(frame1) or not check_image_quality(frame2):
         return {
             "success": False,
-            "error": "poor image quality",
+            "error": "image too blurry",
             "liveness": False,
             "embedding": None
         }
